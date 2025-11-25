@@ -546,15 +546,22 @@ class AdapterGenerator(
         if (this is IrBlock && origin == IrStatementOrigin.ADAPTED_FUNCTION_REFERENCE) {
             return this
         }
+
+        val functionalArgumentType = calculateFunctionalArgumentType(argument)
+        // No conversion should happen if an argument already satisfies the expected type requirements
+        // NB: It's not just a fast path, but sometimes the presence adapter generation is incorrect (see KT-82590)
+        if (functionalArgumentType.isSubtypeOf(expectedType, session)) return this
+
+        val unwrappedExpectedType = getFunctionTypeForPossibleSamType(expectedType) ?: expectedType
+
         // Expect the expected type to be a suspend functional type.
         if (!parameterType.isSuspendOrKSuspendFunctionType(session)) {
             return this
         }
         val expectedFunctionalType = parameterType.customFunctionTypeToSimpleFunctionType(session)
 
-        val functionalArgumentType = calculateFunctionalArgumentType(argument)
         val invokeSymbol = findInvokeSymbol(expectedFunctionalType, functionalArgumentType) ?: return this
-        val suspendConvertedType = parameterType.toIrType() as IrSimpleType
+        val suspendConvertedType = unwrappedExpectedType.toIrType() as IrSimpleType
         return argument.convertWithOffsets { startOffset, endOffset ->
             val argumentType = functionalArgumentType.toIrType()
             val irAdapterFunction =
